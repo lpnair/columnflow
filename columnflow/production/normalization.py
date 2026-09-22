@@ -320,6 +320,18 @@ def normalization_weights_setup(
     lumi = self.config_inst.x.luminosity if self.luminosity is None else self.luminosity
     lumi = lumi.nominal if isinstance(lumi, sn.Number) else float(lumi)
 
+    campaign_year = int(self.config_inst.campaign.x.year)
+
+    def get_normalization_denominator(process_id: int) -> float:
+        if campaign_year >= 2024:
+            # Run 3 >2024: normalize with the signed sum of MC weights
+            return merged_selection_stats[
+                "sum_mc_weight_per_process"
+            ][str(process_id)]
+
+        # Pre-2024: n_events already accounts for the generator-weight sign
+        return float(self.dataset_inst.n_events)
+
     # create a event weight lookup table
     process_weight_table = sp.sparse.lil_matrix((1, max_id + 1), dtype=np.float32)
     if self.allow_stitching and self.get_xsecs_from_inclusive_dataset:
@@ -350,7 +362,7 @@ def normalization_weights_setup(
 
         # fill the process weight table
         for proc_id, br in branching_ratios.items():
-            sum_weights = self.dataset_inst.n_events #normalizing to the number of events instead of sum of weights
+            sum_weights = get_normalization_denominator(proc_id) 
             process_weight_table[0, proc_id] = lumi * inclusive_xsec * br / sum_weights
     else:
         # fill the process weight table with per-process cross sections
@@ -360,7 +372,7 @@ def normalization_weights_setup(
                     f"no cross section registered for process {process_inst} for center-of-mass energy of "
                     f"{self.config_inst.campaign.ecm}",
                 )
-            sum_weights = self.dataset_inst.n_events  #normalizing to the number of events instead of sum of weights
+            sum_weights = get_normalization_denominator(process_inst.id)  
             xsec = process_inst.get_xsec(self.config_inst.campaign.ecm).nominal
             process_weight_table[0, process_inst.id] = lumi * xsec / sum_weights
 
